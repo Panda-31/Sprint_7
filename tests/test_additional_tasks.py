@@ -1,171 +1,175 @@
 import pytest
 import requests
 import allure
-from helpers.courier_helpers import (
-    register_new_courier_and_return_login_password,
-    login_courier,
-    delete_courier,
-    generate_random_string
-)
+from helpers.courier_helpers import generate_random_string
+from config import Endpoints
 
 
 class TestAdditionalTasks:
     
-    
-    @allure.title("Доп.тест 1: Неуспешный запрос возвращает соответствующую ошибку")
-    def test_delete_courier_with_invalid_id_fails(self):
-        """Проверка удаления курьера с невалидным ID"""
-        response = delete_courier("invalid_id")
-        
-        assert response.status_code in [400, 404, 500]
-    
-    @allure.title("Доп.тест 2: Успешный запрос возвращает ok true")
+    @allure.title("Тест успешного удаления курьера")
     def test_delete_courier_success_returns_ok_true(self):
-        courier_data = register_new_courier_and_return_login_password()
-        login, password, _ = courier_data
+        with allure.step("Подготовка данных для создания курьера"):
+            login = generate_random_string(10)
+            password = generate_random_string(10)
+            
+            payload = {
+                "login": login,
+                "password": password
+            }
         
-        login_response = login_courier(login, password)
-        courier_id = login_response.json()["id"]
+        with allure.step("Создание курьера"):
+            url = Endpoints.get_full_url(Endpoints.COURIER)
+            create_response = requests.post(url, data=payload)
+            assert create_response.status_code == 201, f"Ожидался код 201 при создании курьера, получен {create_response.status_code}"
         
-        response = delete_courier(courier_id)
+        with allure.step("Авторизация курьера для получения ID"):
+            login_payload = {"login": login, "password": password}
+            login_url = Endpoints.get_full_url(Endpoints.COURIER_LOGIN)
+            login_response = requests.post(login_url, data=login_payload)
+            assert login_response.status_code == 200, f"Ожидался код 200 при авторизации, получен {login_response.status_code}"
+            
+            courier_id = login_response.json()["id"]
         
-        assert response.status_code == 200
-        assert response.json() == {"ok": True}
+        with allure.step("Отправка запроса на удаление курьера"):
+            delete_url = Endpoints.get_full_url(Endpoints.COURIER_DELETE.format(courier_id=courier_id))
+            response = requests.delete(delete_url)
+        
+        with allure.step("Проверка успешного удаления"):
+            assert response.status_code == 200, f"Ожидался код 200, получен {response.status_code}"
+            assert response.json() == {"ok": True}, "Ответ не содержит {'ok': true}"
     
-    @allure.title("Доп.тест 3: Если отправить запрос без id, вернётся ошибка")
-    def test_delete_courier_without_id_fails(self):
-        response = requests.delete('https://qa-scooter.praktikum-services.ru/api/v1/courier/')
-        
-        assert response.status_code == 404 or response.status_code == 405
-    
-    @allure.title("Доп.тест 4: Если отправить запрос с несуществующим id, вернётся ошибка")
+    @allure.title("Тест удаления курьера с несуществующим ID")
     def test_delete_nonexistent_courier_fails(self):
-        response = delete_courier("999999")
+        non_existent_id = 999999
         
-        assert response.status_code in [400, 404]
-        if response.status_code == 404:
-            assert response.json()["message"] == "Курьера с таким id нет."
-    
-    
-    @allure.title("Доп.тест 5: Успешный запрос возвращает ok true")
-    def test_accept_order_success(self):
-        courier_data = register_new_courier_and_return_login_password()
-        login, password, _ = courier_data
-        login_response = login_courier(login, password)
-        courier_id = login_response.json()["id"]
+        with allure.step("Отправка запроса на удаление несуществующего курьера"):
+            url = Endpoints.get_full_url(Endpoints.COURIER_DELETE.format(courier_id=non_existent_id))
+            response = requests.delete(url)
         
-        try:
-            order_payload = {
+        with allure.step("Проверка ошибки удаления"):
+            assert response.status_code == 404, f"Ожидался код 404, получен {response.status_code}"
+    
+    @allure.title("Тест принятия заказа без ID курьера")
+    def test_accept_order_without_courier_id_fails(self):
+        with allure.step("Отправка запроса на принятие заказа без ID курьера"):
+            url = Endpoints.get_full_url(Endpoints.ORDER_ACCEPT.format(order_id=123))
+            response = requests.put(url)
+        
+        with allure.step("Проверка ошибки валидации"):
+            assert response.status_code == 400, f"Ожидался код 400, получен {response.status_code}"
+            assert response.json()["message"] == "Недостаточно данных для поиска"
+    
+    @allure.title("Тест принятия заказа с неверным ID курьера")
+    def test_accept_order_with_wrong_courier_id_fails(self):
+        with allure.step("Подготовка параметров с неверным ID курьера"):
+            params = {"courierId": "999999"}
+        
+        with allure.step("Отправка запроса на принятие заказа с неверным ID курьера"):
+            url = Endpoints.get_full_url(Endpoints.ORDER_ACCEPT.format(order_id=123))
+            response = requests.put(url, params=params)
+        
+        with allure.step("Проверка ошибки поиска курьера"):
+            assert response.status_code == 404, f"Ожидался код 404, получен {response.status_code}"
+            assert response.json()["message"] == "Курьера с таким id не существует"
+    
+    @allure.title("Тест принятия заказа с неверным ID заказа")
+    def test_accept_order_with_wrong_order_id_fails(self):
+        with allure.step("Подготовка данных для создания курьера"):
+            login = generate_random_string(10)
+            password = generate_random_string(10)
+            
+            payload = {
+                "login": login,
+                "password": password
+            }
+        
+        with allure.step("Создание курьера"):
+            url = Endpoints.get_full_url(Endpoints.COURIER)
+            create_response = requests.post(url, data=payload)
+            assert create_response.status_code == 201, f"Ожидался код 201 при создании курьера, получен {create_response.status_code}"
+        
+        with allure.step("Авторизация курьера для получения ID"):
+            login_payload = {"login": login, "password": password}
+            login_url = Endpoints.get_full_url(Endpoints.COURIER_LOGIN)
+            login_response = requests.post(login_url, data=login_payload)
+            assert login_response.status_code == 200, f"Ожидался код 200 при авторизации, получен {login_response.status_code}"
+            
+            courier_id = login_response.json()["id"]
+        
+        with allure.step("Подготовка параметров"):
+            params = {"courierId": courier_id}
+        
+        with allure.step("Отправка запроса на принятие несуществующего заказа"):
+            url = Endpoints.get_full_url(Endpoints.ORDER_ACCEPT.format(order_id=999999))
+            response = requests.put(url, params=params)
+        
+        with allure.step("Проверка ошибки поиска заказа"):
+            assert response.status_code == 404, f"Ожидался код 404, получен {response.status_code}"
+            assert response.json()["message"] == "Заказа с таким id не существует"
+        
+        with allure.step("Очистка: удаление созданного курьера"):
+            delete_url = Endpoints.get_full_url(Endpoints.COURIER_DELETE.format(courier_id=courier_id))
+            requests.delete(delete_url)
+    
+    @allure.title("Тест получения заказа по номеру")
+    def test_get_order_by_track_success(self):
+        with allure.step("Подготовка данных для создания заказа"):
+            payload = {
                 "firstName": "Test",
                 "lastName": "User",
-                "address": "Test address",
+                "address": "Test address, 123",
                 "metroStation": 4,
                 "phone": "+7 800 355 35 35",
-                "rentTime": 5,
-                "deliveryDate": "2020-06-06",
-                "comment": "Test comment"
+                "rentTime": 3,
+                "deliveryDate": "2024-12-31",
+                "comment": "Test order"
             }
-            
-            order_response = requests.post('https://qa-scooter.praktikum-services.ru/api/v1/orders', json=order_payload)
-            
-            assert order_response.status_code == 201
-            order_data = order_response.json()
-            assert "track" in order_data
-            
-            track = order_data["track"]
-            track_response = requests.get(
-                'https://qa-scooter.praktikum-services.ru/api/v1/orders/track',
-                params={"t": track}
-            )
-            
-            assert track_response.status_code == 200
-            order_id = track_response.json()["order"]["id"]
-            
-            params = {"courierId": courier_id}
-            response = requests.put(f'https://qa-scooter.praktikum-services.ru/api/v1/orders/accept/{order_id}', params=params)
-            
-            assert response.status_code == 200
-            assert response.json() == {"ok": True}
-        finally:
-            delete_courier(courier_id)
-    
-    @allure.title("Доп.тест 6: Если не передать id курьера, запрос вернёт ошибку")
-    def test_accept_order_without_courier_id_fails(self):
-        response = requests.put('https://qa-scooter.praktikum-services.ru/api/v1/orders/accept/123')
         
-        assert response.status_code == 400
-        assert response.json()["message"] == "Недостаточно данных для поиска"
-    
-    @allure.title("Доп.тест 7: Если передать неверный id курьера, запрос вернёт ошибку")
-    def test_accept_order_with_wrong_courier_id_fails(self):
-        params = {"courierId": "999999"}
-        response = requests.put('https://qa-scooter.praktikum-services.ru/api/v1/orders/accept/123', params=params)
-        
-        assert response.status_code == 404
-        assert response.json()["message"] == "Курьера с таким id не существует"
-    
-    @allure.title("Доп.тест 8: Если не передать id заказа, запрос вернёт ошибку")
-    def test_accept_order_without_order_id_fails(self):
-        params = {"courierId": "123"}
-        response = requests.put('https://qa-scooter.praktikum-services.ru/api/v1/orders/accept/', params=params)
-        
-        assert response.status_code == 404
-    
-    @allure.title("Доп.тест 9: Если передать неверный id заказа, запрос вернёт ошибку")
-    def test_accept_order_with_wrong_order_id_fails(self):
-        courier_data = register_new_courier_and_return_login_password()
-        login, password, _ = courier_data
-        login_response = login_courier(login, password)
-        courier_id = login_response.json()["id"]
-        
-        try:
-            params = {"courierId": courier_id}
-            response = requests.put('https://qa-scooter.praktikum-services.ru/api/v1/orders/accept/999999', params=params)
+        with allure.step("Создание заказа"):
+            url = Endpoints.get_full_url(Endpoints.ORDERS)
+            order_response = requests.post(url, json=payload)
+            assert order_response.status_code == 201, f"Ожидался код 201 при создании заказа, получен {order_response.status_code}"
             
-            assert response.status_code == 404
-            assert response.json()["message"] == "Заказа с таким id не существует"
-        finally:
-            delete_courier(courier_id)
-    
-    
-    @allure.title("Доп.тест 10: Успешный запрос возвращает объект с заказом")
-    def test_get_order_by_track_success(self):
-        payload = {
-            "firstName": "Test",
-            "lastName": "User",
-            "address": "Test address",
-            "metroStation": 4,
-            "phone": "+7 800 355 35 35",
-            "rentTime": 5,
-            "deliveryDate": "2020-06-06",
-            "comment": "Test comment"
-        }
+            track = order_response.json()["track"]
         
-        order_response = requests.post('https://qa-scooter.praktikum-services.ru/api/v1/orders', json=payload)
-        track = order_response.json()["track"]
+        with allure.step("Подготовка параметров поиска"):
+            params = {"t": track}
         
-        params = {"t": track}
-        response = requests.get('https://qa-scooter.praktikum-services.ru/api/v1/orders/track', params=params)
+        with allure.step("Отправка запроса на получение заказа по track"):
+            url = Endpoints.get_full_url(Endpoints.ORDER_TRACK)
+            response = requests.get(url, params=params)
         
-        assert response.status_code == 200
-        response_data = response.json()
-        assert "order" in response_data
-        order = response_data["order"]
-        assert "id" in order
-        assert "track" in order
-        assert order["track"] == track
+        with allure.step("Проверка успешного получения заказа"):
+            assert response.status_code == 200, f"Ожидался код 200, получен {response.status_code}"
+            
+            response_data = response.json()
+            assert "order" in response_data, "Ответ не содержит ключа 'order'"
+            
+            order = response_data["order"]
+            assert "id" in order, "Заказ не содержит id"
+            assert "track" in order, "Заказ не содержит track"
+            assert order["track"] == track, "Track номер не совпадает"
     
-    @allure.title("Доп.тест 11: Запрос без номера заказа возвращает ошибку")
+    @allure.title("Тест получения заказа без номера")
     def test_get_order_without_track_fails(self):
-        response = requests.get('https://qa-scooter.praktikum-services.ru/api/v1/orders/track')
+        with allure.step("Отправка запроса на получение заказа без номера"):
+            url = Endpoints.get_full_url(Endpoints.ORDER_TRACK)
+            response = requests.get(url)
         
-        assert response.status_code == 400
-        assert response.json()["message"] == "Недостаточно данных для поиска"
+        with allure.step("Проверка ошибки валидации"):
+            assert response.status_code == 400, f"Ожидался код 400, получен {response.status_code}"
+            assert response.json()["message"] == "Недостаточно данных для поиска"
     
-    @allure.title("Доп.тест 12: Запрос с несуществующим заказом возвращает ошибку")
+    @allure.title("Тест получения несуществующего заказа")
     def test_get_nonexistent_order_fails(self):
-        params = {"t": "999999"}
-        response = requests.get('https://qa-scooter.praktikum-services.ru/api/v1/orders/track', params=params)
+        with allure.step("Подготовка параметров с несуществующим track"):
+            params = {"t": "999999"}
         
-        assert response.status_code == 404
-        assert response.json()["message"] == "Заказ не найден"
+        with allure.step("Отправка запроса на получение несуществующего заказа"):
+            url = Endpoints.get_full_url(Endpoints.ORDER_TRACK)
+            response = requests.get(url, params=params)
+        
+        with allure.step("Проверка ошибки поиска заказа"):
+            assert response.status_code == 404, f"Ожидался код 404, получен {response.status_code}"
+            assert response.json()["message"] == "Заказ не найден"

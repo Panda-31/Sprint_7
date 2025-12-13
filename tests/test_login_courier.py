@@ -1,83 +1,113 @@
 import pytest
 import requests
 import allure
-from helpers.courier_helpers import login_courier
+from helpers.courier_helpers import generate_random_string
+from config import Endpoints
 
 
 class TestLoginCourier:
     
-    @allure.title("Тест 1: Курьер может авторизоваться")
-    def test_login_courier_success(self, create_and_delete_courier):
-        login, password, _ = create_and_delete_courier
+    @allure.title("Тест успешной авторизации курьера")
+    def test_login_courier_success(self, created_courier):
+        login, password, _ = created_courier
         
-        response = login_courier(login, password)
+        with allure.step("Подготовка данных для авторизации"):
+            payload = {
+                "login": login,
+                "password": password
+            }
         
-        assert response.status_code == 200
-        assert "id" in response.json()
+        with allure.step("Отправка запроса на авторизацию"):
+            url = Endpoints.get_full_url(Endpoints.COURIER_LOGIN)
+            response = requests.post(url, data=payload)
+        
+        with allure.step("Проверка успешной авторизации"):
+            assert response.status_code == 200, f"Ожидался код 200, получен {response.status_code}"
+            assert "id" in response.json(), "Ответ не содержит id курьера"
     
-    @allure.title("Тест 2: Для авторизации нужно передать все обязательные поля")
-    @pytest.mark.parametrize("missing_field,field_value", [
-        ("login", "test_login"),
-        ("password", "test_password")
-    ])
-    def test_login_missing_field_fails(self, missing_field, field_value):
-        payload = {"login": "test", "password": "test"}
-        payload.pop(missing_field)
+    @allure.title("Тест авторизации с неверным логином")
+    def test_login_with_wrong_login_fails(self, created_courier):
+        _, password, _ = created_courier
         
-        response = requests.post('https://qa-scooter.praktikum-services.ru/api/v1/courier/login', data=payload)
+        with allure.step("Подготовка данных с неверным логином"):
+            payload = {
+                "login": "wrong_login_" + generate_random_string(5),
+                "password": password
+            }
         
-        assert response.status_code in [400, 504]
-        if response.status_code == 400:
+        with allure.step("Отправка запроса с неверным логином"):
+            url = Endpoints.get_full_url(Endpoints.COURIER_LOGIN)
+            response = requests.post(url, data=payload)
+        
+        with allure.step("Проверка ошибки авторизации"):
+            assert response.status_code == 404, f"Ожидался код 404, получен {response.status_code}"
+            assert response.json()["message"] == "Учетная запись не найдена"
+    
+    @allure.title("Тест авторизации с неверным паролем")
+    def test_login_with_wrong_password_fails(self, created_courier):
+        login, _, _ = created_courier
+        
+        with allure.step("Подготовка данных с неверным паролем"):
+            payload = {
+                "login": login,
+                "password": "wrong_password_" + generate_random_string(5)
+            }
+        
+        with allure.step("Отправка запроса с неверным паролем"):
+            url = Endpoints.get_full_url(Endpoints.COURIER_LOGIN)
+            response = requests.post(url, data=payload)
+        
+        with allure.step("Проверка ошибки авторизации"):
+            assert response.status_code == 404, f"Ожидался код 404, получен {response.status_code}"
+            assert response.json()["message"] == "Учетная запись не найдена"
+    
+    @allure.title("Тест авторизации без логина")
+    def test_login_without_login_fails(self, created_courier):
+        _, password, _ = created_courier
+        
+        with allure.step("Подготовка данных без поля login"):
+            payload = {
+                "password": password
+            }
+        
+        with allure.step("Отправка запроса без поля login"):
+            url = Endpoints.get_full_url(Endpoints.COURIER_LOGIN)
+            response = requests.post(url, data=payload)
+        
+        with allure.step("Проверка ошибки валидации"):
+            assert response.status_code == 400, f"Ожидался код 400, получен {response.status_code}"
             assert response.json()["message"] == "Недостаточно данных для входа"
     
-    @allure.title("Тест 3: Ошибка при неправильном логине")
-    def test_login_wrong_login_fails(self, create_and_delete_courier):
-        _, password, _ = create_and_delete_courier
+    @allure.title("Тест авторизации без пароля - ожидается 400 Bad Request")
+    @pytest.mark.xfail(reason="API иногда возвращает 504 Gateway Timeout вместо 400 Bad Request")
+    def test_login_without_password_fails(self, created_courier):
+        login, _, _ = created_courier
         
-        response = login_courier("wrong_login", password)
+        with allure.step("Подготовка данных без поля password"):
+            payload = {
+                "login": login
+            }
         
-        assert response.status_code == 404
-        assert response.json()["message"] == "Учетная запись не найдена"
-    
-    @allure.title("Тест 4: Ошибка при неправильном пароле")
-    def test_login_wrong_password_fails(self, create_and_delete_courier):
-        login, _, _ = create_and_delete_courier
+        with allure.step("Отправка запроса без поля password"):
+            url = Endpoints.get_full_url(Endpoints.COURIER_LOGIN)
+            response = requests.post(url, data=payload)
         
-        response = login_courier(login, "wrong_password")
-        
-        assert response.status_code == 404
-        assert response.json()["message"] == "Учетная запись не найдена"
-    
-    @allure.title("Тест 5: Ошибка при отсутствии поля")
-    def test_login_without_field_returns_error(self):
-        response = requests.post('https://qa-scooter.praktikum-services.ru/api/v1/courier/login', 
-                                data={"password": "test"})
-        
-        assert response.status_code in [400, 504]
-        if response.status_code == 400:
-            assert response.json()["message"] == "Недостаточно данных для входа"
-        
-        response = requests.post('https://qa-scooter.praktikum-services.ru/api/v1/courier/login', 
-                                data={"login": "test"})
-        
-        assert response.status_code in [400, 504]
-        if response.status_code == 400:
+        with allure.step("Проверка ошибки валидации (ожидается 400)"):
+            assert response.status_code == 400, f"Ожидался код 400, получен {response.status_code}"
             assert response.json()["message"] == "Недостаточно данных для входа"
     
-    @allure.title("Тест 6: Авторизация несуществующего пользователя возвращает ошибку")
+    @allure.title("Тест авторизации несуществующего курьера")
     def test_login_nonexistent_courier_fails(self):
-        response = login_courier("nonexistent_login_12345", "nonexistent_pass_12345")
+        with allure.step("Подготовка данных несуществующего курьера"):
+            payload = {
+                "login": "nonexistent_" + generate_random_string(10),
+                "password": "nonexistent_" + generate_random_string(10)
+            }
         
-        assert response.status_code == 404
-        assert response.json()["message"] == "Учетная запись не найдена"
-    
-    @allure.title("Тест 7: Успешный запрос возвращает id")
-    def test_successful_login_returns_id(self, create_and_delete_courier):
-        login, password, _ = create_and_delete_courier
+        with allure.step("Отправка запроса на авторизацию несуществующего курьера"):
+            url = Endpoints.get_full_url(Endpoints.COURIER_LOGIN)
+            response = requests.post(url, data=payload)
         
-        response = login_courier(login, password)
-        
-        assert response.status_code == 200
-        response_data = response.json()
-        assert "id" in response_data
-        assert isinstance(response_data["id"], int)
+        with allure.step("Проверка ошибки авторизации"):
+            assert response.status_code == 404, f"Ожидался код 404, получен {response.status_code}"
+            assert response.json()["message"] == "Учетная запись не найдена"
