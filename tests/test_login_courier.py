@@ -1,7 +1,7 @@
 import pytest
 import requests
 import allure
-from helpers.courier_helpers import generate_random_string
+from test_data import TestData
 from config import Endpoints
 
 
@@ -31,7 +31,7 @@ class TestLoginCourier:
         
         with allure.step("Подготовка данных с неверным логином"):
             payload = {
-                "login": "wrong_login_" + generate_random_string(5),
+                "login": TestData.get_courier_data()["login"],
                 "password": password
             }
         
@@ -50,7 +50,7 @@ class TestLoginCourier:
         with allure.step("Подготовка данных с неверным паролем"):
             payload = {
                 "login": login,
-                "password": "wrong_password_" + generate_random_string(5)
+                "password": TestData.get_courier_data()["password"]
             }
         
         with allure.step("Отправка запроса с неверным паролем"):
@@ -98,10 +98,12 @@ class TestLoginCourier:
     
     @allure.title("Тест авторизации несуществующего курьера")
     def test_login_nonexistent_courier_fails(self):
+        data = TestData.get_courier_data()
+        
         with allure.step("Подготовка данных несуществующего курьера"):
             payload = {
-                "login": "nonexistent_" + generate_random_string(10),
-                "password": "nonexistent_" + generate_random_string(10)
+                "login": data["login"],
+                "password": data["password"]
             }
         
         with allure.step("Отправка запроса на авторизацию несуществующего курьера"):

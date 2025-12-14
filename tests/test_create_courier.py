@@ -1,24 +1,18 @@
 import pytest
 import requests
 import allure
-from helpers.courier_helpers import generate_random_string
+from test_data import TestData
 from config import Endpoints
 
 
 class TestCreateCourier:
     
     @allure.title("Тест успешного создания курьера")
-    def test_create_courier_success(self):
+    def test_create_courier_success(self, cleanup_courier_fixture):
+        data = TestData.get_courier_data()
+        
         with allure.step("Подготовка данных для создания курьера"):
-            login = generate_random_string(10)
-            password = generate_random_string(10)
-            first_name = generate_random_string(10)
-            
-            payload = {
-                "login": login,
-                "password": password,
-                "firstName": first_name
-            }
+            payload = data
         
         with allure.step("Отправка запроса на создание курьера"):
             url = Endpoints.get_full_url(Endpoints.COURIER)
@@ -27,18 +21,8 @@ class TestCreateCourier:
         with allure.step("Проверка, что курьер создан успешно"):
             assert response.status_code == 201, f"Ожидался код 201, получен {response.status_code}"
             assert response.json() == {"ok": True}, "Ответ не содержит {'ok': true}"
-            
-        with allure.step("Очистка: удаление созданного курьера"):
-            login_payload = {"login": login, "password": password}
-            login_url = Endpoints.get_full_url(Endpoints.COURIER_LOGIN)
-            login_response = requests.post(login_url, data=login_payload)
-            
-            if login_response.status_code == 200:
-                courier_id = login_response.json()["id"]
-                delete_url = Endpoints.get_full_url(
-                    Endpoints.COURIER_DELETE.format(courier_id=courier_id)
-                )
-                requests.delete(delete_url)
+        
+        cleanup_courier_fixture.append((data["login"], data["password"]))
     
     @allure.title("Тест создания курьера с дублирующимся логином")
     def test_create_duplicate_courier_fails(self, created_courier):
@@ -63,8 +47,8 @@ class TestCreateCourier:
     def test_create_courier_without_login_fails(self):
         with allure.step("Подготовка данных без поля login"):
             payload = {
-                "password": generate_random_string(10),
-                "firstName": generate_random_string(10)
+                "password": TestData.get_courier_data()["password"],
+                "firstName": TestData.get_courier_data()["firstName"]
             }
         
         with allure.step("Отправка запроса без поля login"):
@@ -79,8 +63,8 @@ class TestCreateCourier:
     def test_create_courier_without_password_fails(self):
         with allure.step("Подготовка данных без поля password"):
             payload = {
-                "login": generate_random_string(10),
-                "firstName": generate_random_string(10)
+                "login": TestData.get_courier_data()["login"],
+                "firstName": TestData.get_courier_data()["firstName"]
             }
         
         with allure.step("Отправка запроса без поля password"):
@@ -92,12 +76,11 @@ class TestCreateCourier:
             assert response.json()["message"] == "Недостаточно данных для создания учетной записи"
     
     @allure.title("Тест создания курьера без поля firstName")
-    def test_create_courier_without_firstname_success(self):
+    def test_create_courier_without_firstname_success(self, cleanup_courier_fixture):
+        data = TestData.get_courier_data_without_firstname()
+        
         with allure.step("Подготовка данных без поля firstName"):
-            payload = {
-                "login": generate_random_string(10),
-                "password": generate_random_string(10)
-            }
+            payload = data
         
         with allure.step("Отправка запроса без поля firstName"):
             url = Endpoints.get_full_url(Endpoints.COURIER)
@@ -106,15 +89,5 @@ class TestCreateCourier:
         with allure.step("Проверка успешного создания"):
             assert response.status_code == 201, f"Ожидался код 201, получен {response.status_code}"
             assert response.json() == {"ok": True}, "Ответ не содержит {'ok': true}"
-            
-        with allure.step("Очистка: удаление созданного курьера"):
-            login_payload = {"login": payload["login"], "password": payload["password"]}
-            login_url = Endpoints.get_full_url(Endpoints.COURIER_LOGIN)
-            login_response = requests.post(login_url, data=login_payload)
-            
-            if login_response.status_code == 200:
-                courier_id = login_response.json()["id"]
-                delete_url = Endpoints.get_full_url(
-                    Endpoints.COURIER_DELETE.format(courier_id=courier_id)
-                )
-                requests.delete(delete_url)
+        
+        cleanup_courier_fixture.append((data["login"], data["password"]))

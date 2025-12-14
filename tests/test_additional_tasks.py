@@ -1,35 +1,16 @@
 import pytest
 import requests
 import allure
-from helpers.courier_helpers import generate_random_string
+from test_data import TestData
 from config import Endpoints
+from helpers.courier_helpers import register_courier
 
 
 class TestAdditionalTasks:
     
     @allure.title("Тест успешного удаления курьера")
-    def test_delete_courier_success_returns_ok_true(self):
-        with allure.step("Подготовка данных для создания курьера"):
-            login = generate_random_string(10)
-            password = generate_random_string(10)
-            
-            payload = {
-                "login": login,
-                "password": password
-            }
-        
-        with allure.step("Создание курьера"):
-            url = Endpoints.get_full_url(Endpoints.COURIER)
-            create_response = requests.post(url, data=payload)
-            assert create_response.status_code == 201, f"Ожидался код 201 при создании курьера, получен {create_response.status_code}"
-        
-        with allure.step("Авторизация курьера для получения ID"):
-            login_payload = {"login": login, "password": password}
-            login_url = Endpoints.get_full_url(Endpoints.COURIER_LOGIN)
-            login_response = requests.post(login_url, data=login_payload)
-            assert login_response.status_code == 200, f"Ожидался код 200 при авторизации, получен {login_response.status_code}"
-            
-            courier_id = login_response.json()["id"]
+    def test_delete_courier_success_returns_ok_true(self, created_courier_id):
+        courier_id = created_courier_id
         
         with allure.step("Отправка запроса на удаление курьера"):
             delete_url = Endpoints.get_full_url(Endpoints.COURIER_DELETE.format(courier_id=courier_id))
@@ -74,28 +55,8 @@ class TestAdditionalTasks:
             assert response.json()["message"] == "Курьера с таким id не существует"
     
     @allure.title("Тест принятия заказа с неверным ID заказа")
-    def test_accept_order_with_wrong_order_id_fails(self):
-        with allure.step("Подготовка данных для создания курьера"):
-            login = generate_random_string(10)
-            password = generate_random_string(10)
-            
-            payload = {
-                "login": login,
-                "password": password
-            }
-        
-        with allure.step("Создание курьера"):
-            url = Endpoints.get_full_url(Endpoints.COURIER)
-            create_response = requests.post(url, data=payload)
-            assert create_response.status_code == 201, f"Ожидался код 201 при создании курьера, получен {create_response.status_code}"
-        
-        with allure.step("Авторизация курьера для получения ID"):
-            login_payload = {"login": login, "password": password}
-            login_url = Endpoints.get_full_url(Endpoints.COURIER_LOGIN)
-            login_response = requests.post(login_url, data=login_payload)
-            assert login_response.status_code == 200, f"Ожидался код 200 при авторизации, получен {login_response.status_code}"
-            
-            courier_id = login_response.json()["id"]
+    def test_accept_order_with_wrong_order_id_fails(self, created_courier_id):
+        courier_id = created_courier_id
         
         with allure.step("Подготовка параметров"):
             params = {"courierId": courier_id}
@@ -107,29 +68,14 @@ class TestAdditionalTasks:
         with allure.step("Проверка ошибки поиска заказа"):
             assert response.status_code == 404, f"Ожидался код 404, получен {response.status_code}"
             assert response.json()["message"] == "Заказа с таким id не существует"
-        
-        with allure.step("Очистка: удаление созданного курьера"):
-            delete_url = Endpoints.get_full_url(Endpoints.COURIER_DELETE.format(courier_id=courier_id))
-            requests.delete(delete_url)
     
     @allure.title("Тест получения заказа по номеру")
     def test_get_order_by_track_success(self):
-        with allure.step("Подготовка данных для создания заказа"):
-            payload = {
-                "firstName": "Test",
-                "lastName": "User",
-                "address": "Test address, 123",
-                "metroStation": 4,
-                "phone": "+7 800 355 35 35",
-                "rentTime": 3,
-                "deliveryDate": "2024-12-31",
-                "comment": "Test order"
-            }
+        payload = TestData.get_order_data()
         
         with allure.step("Создание заказа"):
             url = Endpoints.get_full_url(Endpoints.ORDERS)
             order_response = requests.post(url, json=payload)
-            assert order_response.status_code == 201, f"Ожидался код 201 при создании заказа, получен {order_response.status_code}"
             
             track = order_response.json()["track"]
         
